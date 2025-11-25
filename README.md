@@ -5,7 +5,7 @@ Python daemon that keeps HP ProLiant chassis fans in check from inside a Proxmox
 ## Features
 
 - Built-in `quiet`, `balanced`, and `performance` curves plus arbitrary custom curves in YAML
-- Tunable polling interval, duty limits, startup boost, and emergency override
+- Tunable polling interval, duty limits, startup boost, optional temperature smoothing, and emergency override
 - Works from unprivileged LXCs with read-only hwmon mounts
 - `--once` testing mode and long-running daemon mode
 
@@ -54,6 +54,7 @@ controller:
   min_percent: 15
   max_percent: 100
   min_step: 3
+  filter_window: 3  # moving average window (set to 1 to disable)
   startup_boost_percent: 40
   startup_boost_seconds: 10
   emergency_temperature: 85
@@ -65,6 +66,8 @@ sensors:
     - "/sys/class/thermal/thermal_zone*/temp"
   scale: 1000
   average_samples: 3
+  average_mode: ema  # mean | ema
+  ema_alpha: 0.3     # only used when average_mode=ema
   # fallback_command: "sensors -u | awk '/temp1_input/ {print $2; exit}'"
 
 curves:
@@ -91,7 +94,7 @@ Successful Redfish responses contain `Base.1.18.Success`, identical to the manua
 4. Restart the container: `pct stop <CTID> && pct start <CTID>`.
 5. Inside the container confirm values exist: `cat /sys/class/hwmon/hwmon*/temp1_input`.
 
-If sysfs cannot be mounted, install `lm-sensors` inside the guest and configure `fallback_command` to emit a Celsius value per invocation.
+If sysfs cannot be mounted, install `lm-sensors` inside the guest and configure `fallback_command` to emit a Celsius value per invocation. When noisy readings cause fan hunting, increase `average_samples` for per-read smoothing and raise `controller.filter_window` to average the last N polling cycles (set to 1 to disable).
 
 ## Daemonizing on Alpine Linux (OpenRC)
 
@@ -105,6 +108,7 @@ command_args="--config /etc/hpfancontrol.yaml"
 command_user="fanctl:fanctl"
 pidfile="/run/hpfancontrol.pid"
 name="HP Fan Control"
+command_background=yes
 
 depend() {
 	need net
@@ -124,7 +128,7 @@ rc-update add hpfancontrol default
 rc-service hpfancontrol start
 ```
 
-Adjust the virtualenv path or service account to match your deployment.
+`command_background=yes` makes OpenRC's start-stop-daemon keep the Python process in the background without needing it to fork itself. Adjust the virtualenv path or service account to match your deployment.
 
 ## Running
 

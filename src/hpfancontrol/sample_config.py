@@ -20,6 +20,7 @@ controller:
   min_percent: 15
   max_percent: 100
   min_step: 3
+  filter_window: 3
   startup_boost_percent: 40
   startup_boost_seconds: 10
   emergency_temperature: 85

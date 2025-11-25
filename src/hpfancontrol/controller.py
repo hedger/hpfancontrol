@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from collections import deque
 
 from .client import FanCommandError, RedfishFanClient
 from .config import ControllerSettings
@@ -35,6 +36,7 @@ class FanController:
             if settings.startup_boost_seconds > 0
             else 0.0
         )
+        self._filter = TemperatureFilter(settings.filter_window)
 
     def run(self, stop_event: threading.Event | None = None) -> None:
         """Run the fan loop until stop_event is set."""
@@ -54,16 +56,26 @@ class FanController:
 
     def _tick(self) -> None:
         try:
-            temperature = self._sensor.read_celsius()
+            raw_temperature = self._sensor.read_celsius()
         except SensorReadError as exc:
             LOG.warning("No temperature reading: %s", exc)
             return
+
+        temperature = self._filter.apply(raw_temperature)
 
         percent = self._compute_percent(temperature)
         self._iterations += 1
 
         if self._iterations % max(1, self._settings.log_every_n_samples) == 0:
-            LOG.info("CPU %.1f°C, target %.1f%%", temperature, percent)
+            if temperature != raw_temperature:
+                LOG.info(
+                    "CPU %.1f°C (raw %.1f°C), target %.1f%%",
+                    temperature,
+                    raw_temperature,
+                    percent,
+                )
+            else:
+                LOG.info("CPU %.1f°C, target %.1f%%", temperature, percent)
 
         if not self._should_apply(percent):
             return
@@ -103,3 +115,19 @@ def _wait_for_next(
         stop_event.wait(timeout=sleep_for)
     else:
         time.sleep(sleep_for)
+
+
+class TemperatureFilter:
+    """Simple moving average smoothing for temperature readings."""
+
+    def __init__(self, window: int) -> None:
+        self._window = max(1, int(window))
+        self._values: deque[float] = deque(maxlen=self._window)
+
+    def apply(self, value: float) -> float:
+        if self._window == 1:
+            return value
+        self._values.append(value)
+        if len(self._values) == 0:
+            return value
+        return sum(self._values) / len(self._values)

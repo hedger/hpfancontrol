@@ -72,6 +72,8 @@ class SensorConfig:
     paths: list[str] = field(default_factory=lambda: list(DEFAULT_SENSOR_PATHS))
     scale: float | None = 1000.0
     average_samples: int = 1
+    average_mode: str = "mean"
+    ema_alpha: float | None = None
     fallback_command: list[str] | None = None
 
 
@@ -89,6 +91,7 @@ class ControllerSettings:
     emergency_temperature: float = 85.0
     emergency_percent: float = 100.0
     log_every_n_samples: int = 6
+    filter_window: int = 1
 
 
 @dataclass(slots=True)
@@ -158,6 +161,7 @@ def _parse_controller(data: dict[str, Any]) -> ControllerSettings:
         emergency_temperature=float(data.get("emergency_temperature", 85.0)),
         emergency_percent=float(data.get("emergency_percent", 100.0)),
         log_every_n_samples=int(data.get("log_every_n_samples", 6)),
+        filter_window=int(data.get("filter_window", data.get("temperature_filter_window", 1))),
     )
 
 
@@ -173,10 +177,20 @@ def _parse_sensors(data: dict[str, Any]) -> SensorConfig:
         scale = None if scale_value is None else float(scale_value)
     else:
         scale = 1000.0
+    mode = (data.get("average_mode", "mean") or "mean").lower()
+    if mode not in {"mean", "ema"}:
+        raise ValueError("sensors.average_mode must be 'mean' or 'ema'")
+    ema_alpha = data.get("ema_alpha")
+    if ema_alpha is not None:
+        ema_alpha = float(ema_alpha)
+        if not 0 < ema_alpha <= 1:
+            raise ValueError("sensors.ema_alpha must be between 0 and 1")
     return SensorConfig(
         paths=list(paths) if paths else list(DEFAULT_SENSOR_PATHS),
         scale=scale,
         average_samples=int(data.get("average_samples", 1)),
+        average_mode=mode,
+        ema_alpha=ema_alpha,
         fallback_command=command,
     )
 

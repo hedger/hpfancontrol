@@ -22,6 +22,7 @@ class SensorReader:
 
     def __init__(self, config: SensorConfig) -> None:
         self._config = config
+        self._ema_value: float | None = None
 
     def read_celsius(self) -> float:
         values: list[float] = []
@@ -30,7 +31,8 @@ class SensorReader:
             values.append(value)
         if not values:
             raise SensorReadError("No CPU temperature sources were readable")
-        return sum(values) / len(values)
+        sample = sum(values) / len(values)
+        return self._apply_filter(sample)
 
     def _read_once(self) -> float:
         for path in _iter_sensor_paths(self._config.paths):
@@ -58,6 +60,21 @@ class SensorReader:
             raise SensorReadError("Fallback command output was not a float") from exc
         LOG.debug("Read %.2f°C from fallback command", value)
         return value
+
+    def _apply_filter(self, sample: float) -> float:
+        mode = (self._config.average_mode or "mean").lower()
+        if mode == "ema":
+            alpha = self._config.ema_alpha or 0.5
+            if not 0 < alpha <= 1:
+                LOG.warning("Invalid ema_alpha %.3f; defaulting to 0.5", alpha)
+                alpha = 0.5
+            if self._ema_value is None:
+                self._ema_value = sample
+            else:
+                self._ema_value = alpha * sample + (1 - alpha) * self._ema_value
+            LOG.debug("EMA filtered temp %.2f°C (alpha %.2f)", self._ema_value, alpha)
+            return self._ema_value
+        return sample
 
 
 def _iter_sensor_paths(patterns: Iterable[str]) -> Iterable[str]:

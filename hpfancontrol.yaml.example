@@ -14,6 +14,7 @@ controller:
   min_percent: 15
   max_percent: 100
   min_step: 3
+  filter_window: 3  # moving average window (set to 1 to disable)
   startup_boost_percent: 40
   startup_boost_seconds: 10
   emergency_temperature: 85
@@ -25,6 +26,8 @@ sensors:
     - "/sys/class/thermal/thermal_zone*/temp"
   scale: 1000
   average_samples: 3
+  average_mode: ema  # mean | ema
+  ema_alpha: 0.3
   # fallback_command: "sensors -u | awk '/temp1_input/ {print $2; exit}'"
 
 curves:
